@@ -134,25 +134,26 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 
     lc  = ngx_http_get_module_loc_conf(r,ngx_http_uta_module);
 
+    /*
+     * time_expiration on;
+     * check if (stime < now < etime)
+     */
+
     if (lc->time_expiration) {
-
 	if (ngx_http_arg(r, (u_char *) "stime", 5, &stime) == NGX_OK) {
-	    ngx_log_error(NGX_LOG_DEBUG,log,0,"stime: %s", stime.data);
-	}
-	if (ngx_http_arg(r, (u_char *) "etime", 5, &etime) == NGX_OK) {
-	    ngx_log_error(NGX_LOG_DEBUG,log,0,"etime: %s", etime.data);
-	}
-	ngx_log_error(NGX_LOG_DEBUG,log,0,"etime (d): %ld", gettime(etime));
-	ngx_log_error(NGX_LOG_DEBUG,log,0,"stime (d): %ld", gettime(stime));
-
-/*	if ( gettime(stime) == (time_t) -1 || time(NULL) < gettime(stime) || gettime(etime) == (time_t) -1 || time(NULL) > gettime(etime)) {
+	    if (ngx_http_arg(r, (u_char *) "etime", 5, &etime) == NGX_OK) {
+		if ( gettime(stime) == (time_t) -1 || time(NULL) < gettime(stime) || gettime(etime) == (time_t) -1 || time(NULL) > gettime(etime)) {
 		    return NGX_HTTP_UNAUTHORIZED;
-		}*/
-    }
-    else {
+		}
+	    }
+	    else {
+		return NGX_HTTP_UNAUTHORIZED;
+	    }
+	}
+	else {
     	    return NGX_HTTP_UNAUTHORIZED;
-    }	
-    
+	}	
+    }
     
 
     path.len = last - path.data;
