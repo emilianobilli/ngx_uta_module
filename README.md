@@ -12,6 +12,7 @@ If matched, the request is considered valid unless time restrictions are defined
 If time-based validity checking is indicated, the time that the request was received at the Content Distributor is compared to “not-valid-before” or “not-valid-after” specifications and the request validated or rejected accordingly.
 If the request is rejected, the defined error action is taken and an Extended Status Code is included in the log record indicating the results of the authentication checks.
 
+## Configuration
 ```
 location / {
             root /home/ubuntu;
