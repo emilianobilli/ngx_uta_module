@@ -7,7 +7,9 @@
 #include <string.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <time.h>
 
+static time_t gettime(ngx_str_t nstr);
 static void *ngx_http_uta_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r);
@@ -28,7 +30,7 @@ ngx_http_module_t ngx_http_uta_module_ctx = {
 typedef struct {
     ngx_str_t 	secret;
     ngx_str_t   hmac;		/* sha1 or sha256 */
-    ngx_flag_t  time;		/* If use time of expiration */
+    ngx_flag_t  time_expiration;		/* If use time of expiration */
 } ngx_http_uta_loc_conf_t;
 
 static void *ngx_http_uta_create_loc_conf(ngx_conf_t *cf)
@@ -39,6 +41,9 @@ static void *ngx_http_uta_create_loc_conf(ngx_conf_t *cf)
     if (conf == NULL) {
 	return NGX_CONF_ERROR;
     }
+
+    conf->time_expiration = NGX_CONF_UNSET;
+
     return conf;
 }
 
@@ -49,7 +54,7 @@ static ngx_command_t ngx_http_uta_commands[] = {
       0,
       0,
       NULL },
-    { ngx_string("scret"),
+    { ngx_string("secret"),
       NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_str_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
@@ -61,11 +66,11 @@ static ngx_command_t ngx_http_uta_commands[] = {
       NGX_HTTP_LOC_CONF_OFFSET,
       offsetof(ngx_http_uta_loc_conf_t,hmac),
       NULL },
-    { ngx_string("time"),
-      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+    { ngx_string("time_expiration"),
+      NGX_HTTP_LOC_CONF|NGX_CONF_FLAG,
       ngx_conf_set_flag_slot,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_uta_loc_conf_t, time),
+      offsetof(ngx_http_uta_loc_conf_t,time_expiration),
       NULL },
     ngx_null_command
 };
@@ -88,15 +93,16 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 {
     ngx_buf_t *b;
     ngx_chain_t out;
-/*    ngx_http_uta_loc_conf_t  *lc;  */
+    ngx_http_uta_loc_conf_t  *lc; 
     ngx_http_core_loc_conf_t *clc;
     ngx_open_file_info_t      of;
     ngx_uint_t		      level;
     ngx_int_t 		      rc;
-    ngx_str_t		      path; /*,value;*/
+    ngx_str_t		      path,stime,etime; /*,value;*/
     u_char 		      *last;
     size_t		      root;
     ngx_log_t                 *log;
+
 
 
     log = r->connection->log;
@@ -107,6 +113,10 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 
     if (r->uri.data[r->uri.len-1] == '/') {
 	return NGX_DECLINED;
+    }
+
+    if (r->args.len == 0) {
+	return NGX_HTTP_NOT_FOUND;
     }
 
     ngx_log_error(NGX_LOG_DEBUG,log,0,"r->uri.data: %s", r->uri.data);
@@ -122,15 +132,30 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 	return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    lc  = ngx_http_get_module_loc_conf(r,ngx_http_uta_module);
+
+    if (lc->time_expiration) {
+
+	if (ngx_http_arg(r, (u_char *) "stime", 5, &stime) == NGX_OK) {
+	    ngx_log_error(NGX_LOG_DEBUG,log,0,"stime: %s", stime.data);
+	}
+	if (ngx_http_arg(r, (u_char *) "etime", 5, &etime) == NGX_OK) {
+	    ngx_log_error(NGX_LOG_DEBUG,log,0,"etime: %s", etime.data);
+	}
+	ngx_log_error(NGX_LOG_DEBUG,log,0,"etime (d): %ld", gettime(etime));
+	ngx_log_error(NGX_LOG_DEBUG,log,0,"stime (d): %ld", gettime(stime));
+
+/*	if ( gettime(stime) == (time_t) -1 || time(NULL) < gettime(stime) || gettime(etime) == (time_t) -1 || time(NULL) > gettime(etime)) {
+		    return NGX_HTTP_UNAUTHORIZED;
+		}*/
+    }
+    else {
+    	    return NGX_HTTP_UNAUTHORIZED;
+    }	
+    
     
 
     path.len = last - path.data;
-    
-/*    lc  = ngx_http_get_module_loc_conf(r,ngx_http_uta_module); */
-
-    if (r->args.len == 0) {
-	return NGX_HTTP_NOT_FOUND;
-    }
 
     clc = ngx_http_get_module_loc_conf(r,ngx_http_core_module);
     
@@ -147,6 +172,8 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
         != NGX_OK)
     {
         switch (of.err) {
+
+
 
         case 0:
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -249,3 +276,37 @@ static char *ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
+
+static time_t gettime(ngx_str_t nstr)
+{
+    struct tm t;
+    int i;
+    char year[5] = {0};
+    char mon[3]  = {0};
+    char day[3]  = {0};
+    char hh[3]   = {0};
+    char mm[3]   = {0};
+
+    memset (&t,0,sizeof(struct tm));
+
+    if (nstr.len != 12)
+        return (time_t) -1;
+
+    for ( i = 0;(size_t) i <= nstr.len-1; i++ )
+        if (!isdigit(nstr.data[i]))
+            return (time_t) -1;
+
+    strncpy(year,(char *)&(nstr.data)[0],4);
+    strncpy(mon, (char *)&(nstr.data)[4],2);
+    strncpy(day, (char *)&(nstr.data)[6],2);
+    strncpy(hh,  (char *)&(nstr.data)[8],2);
+    strncpy(mm,  (char *)&(nstr.data)[10],2);
+
+    t.tm_min  = atoi(mm);
+    t.tm_hour = atoi(hh);
+    t.tm_mday = atoi(day);
+    t.tm_mon  = atoi(mon) -1;
+    t.tm_year = atoi(year)-1900;
+
+    return mktime(&t);
+}
