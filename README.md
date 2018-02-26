@@ -16,9 +16,18 @@ If the request is rejected, the defined error action is taken and an Extended St
 location / {
             root /home/ubuntu;
             uta;			/* Enable module */
-            secret secret_to_hash;	/* Secret */
+            secret secret_to_hash;	            /* Secret */
+            time_expiration on;                 /* user params stime and etime */
             hmac sha1;			/* sha1 or sha256 */
         }
 ```
+## Time Expiration
+```
+    time_expiration on|off;
+    ?stime=AAAAMMDDHHMM&etime=AAAAMMDDHHMM
+    
+```
+
+
 E.
 
