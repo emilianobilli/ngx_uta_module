@@ -89,6 +89,7 @@ ngx_module_t ngx_http_uta_module = {
     NULL,
     NGX_MODULE_V1_PADDING
 };
+
 static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 {
     ngx_buf_t *b;
@@ -98,7 +99,7 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     ngx_open_file_info_t      of;
     ngx_uint_t		      level;
     ngx_int_t 		      rc;
-    ngx_str_t		      path,stime,etime; /*,value;*/
+    ngx_str_t		      path,stime,etime,hash; /*,value;*/
     ngx_table_elt_t  	      *h;
     u_char 		      *last;
     size_t		      root;
@@ -135,11 +136,22 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 
     lc  = ngx_http_get_module_loc_conf(r,ngx_http_uta_module);
 
+
+    if (ngx_http_arg(r,(u_char *) "hash",4,&hash) != NGX_OK) {
+	return NGX_HTTP_FORBIDDEN;
+    }
+
+    /*
+     * Check if hash is the last argument in r->args
+     */
+    if ( (r->args.data + r->args.len) - hash.len != hash.data) {
+	return NGX_HTTP_FORBIDDEN;
+    }
+
     /*
      * time_expiration on;
      * check if (stime < now < etime)
      */
-
     if (lc->time_expiration) {
 	if (ngx_http_arg(r, (u_char *) "stime", 5, &stime) == NGX_OK) {
 	    if (ngx_http_arg(r, (u_char *) "etime", 5, &etime) == NGX_OK) {
@@ -148,11 +160,11 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 		}
 	    }
 	    else {
-		return NGX_HTTP_UNAUTHORIZED;
+		return NGX_HTTP_FORBIDDEN;;
 	    }
 	}
 	else {
-    	    return NGX_HTTP_UNAUTHORIZED;
+    	    return NGX_HTTP_FORBIDDEN;;
 	}	
     }
     
