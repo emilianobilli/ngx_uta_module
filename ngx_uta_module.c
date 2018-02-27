@@ -99,6 +99,7 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     ngx_uint_t		      level;
     ngx_int_t 		      rc;
     ngx_str_t		      path,stime,etime; /*,value;*/
+    ngx_table_elt_t  	      *h;
     u_char 		      *last;
     size_t		      root;
     ngx_log_t                 *log;
@@ -221,14 +222,26 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = of.size;
     r->headers_out.last_modified_time = of.mtime;
+    r->headers_out.content_type.len  = sizeof("video/MP2T")-1;
+    r->headers_out.content_type.data = (u_char *) "video/MP2T";
+
+    h = ngx_list_push(&r->headers_out.headers);
+    if (h == NULL) {
+        return NGX_ERROR;
+    }
+
+    h->hash = 1;
+    ngx_str_set(&h->key, "Access-Control-Allow-Origin");
+    ngx_str_set(&h->value, "*");
+
 
     if (ngx_http_set_etag(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
-
+    /*
     if (ngx_http_set_content_type(r) != NGX_OK) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
+    }*/
 
     if (r != r->main && of.size == 0) {
         return ngx_http_send_header(r);
