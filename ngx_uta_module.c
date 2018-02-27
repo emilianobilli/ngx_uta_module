@@ -4,15 +4,19 @@
 
 
 #include <ngx_config.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 #include <string.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <time.h>
 
-static time_t gettime(ngx_str_t nstr);
-static void *ngx_http_uta_create_loc_conf(ngx_conf_t *cf);
-static char *ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static time_t    gettime(ngx_str_t nstr);
+static void *    ngx_http_uta_create_loc_conf(ngx_conf_t *cf);
+static char *    ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r);
+static u_char *get_hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len);
+static u_char *sha1_hex(const u_char *md, u_char *hex);
 
 
 ngx_http_module_t ngx_http_uta_module_ctx = {
@@ -101,11 +105,12 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     ngx_int_t 		      rc;
     ngx_str_t		      path,stime,etime,hash; /*,value;*/
     ngx_table_elt_t  	      *h;
-    u_char 		      *last;
+    u_char 		      *last,*to_hash;
     size_t		      root;
     ngx_log_t                 *log;
-
-
+    u_char		      md[20];	/* For hmac(sha1()) */
+    u_char		      md_hex_str[40+1] = {0};
+    size_t		      alloc_sz;
 
     log = r->connection->log;
 
@@ -121,7 +126,7 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 	return NGX_HTTP_NOT_FOUND;
     }
 
-    ngx_log_error(NGX_LOG_DEBUG,log,0,"r->uri.data: %s", r->uri.data);
+    ngx_log_error(NGX_LOG_DEBUG,log,0,"r->uri.data: %s,%d", r->uri.data, r->uri.len);
     ngx_log_error(NGX_LOG_DEBUG,log,0,"r->args.data: %s", r->args.data);
 
     rc = ngx_http_discard_request_body(r);
@@ -148,6 +153,11 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 	return NGX_HTTP_FORBIDDEN;
     }
 
+    if ( hash.len != 21 ) {		/* 0 + 20chars */
+	return NGX_HTTP_FORBIDDEN;
+    }
+    
+
     /*
      * time_expiration on;
      * check if (stime < now < etime)
@@ -160,14 +170,47 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
 		}
 	    }
 	    else {
-		return NGX_HTTP_FORBIDDEN;;
+		return NGX_HTTP_FORBIDDEN;
 	    }
 	}
 	else {
-    	    return NGX_HTTP_FORBIDDEN;;
+    	    return NGX_HTTP_FORBIDDEN;
 	}	
     }
-    
+
+    /*
+     *	r->uri.data:  /path/to/video/v.m3u8 
+     *  r->uri.len:   21
+     *  r->args.data: stime=YYYYMMDDHHMM&etime=YYYYMMDDHHMM&other_stuffs=OTHER&hash=012345678900987654321
+     *  r->args.len:  82
+     * 
+     *  need space to: /path/to/video/v.m3u8?stime=YYYYMMDDHHMM&etime=YYYYMMDDHHMM&other_stuffs=OTHER
+     *  r->uri.len:  21
+     *  r->args.len: 82
+     *  -4: "hash" word
+     *  -2: '&' and '=' characters
+     *  -hash.len: 21
+     *  +2: '?' and '\0'
+     */
+    alloc_sz = r->uri.len + r->args.len - (4+2+hash.len) + 2;
+    to_hash  = (u_char*) calloc(alloc_sz,1);
+
+    if (to_hash == NULL) {
+	return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+    strncpy((char *)&to_hash[0]           ,(const char *)r->uri.data ,r->uri.len  + 1 );
+    strncpy((char *)&to_hash[r->uri.len+1],(const char *)r->args.data,r->args.len - (4+2+hash.len));
+
+    get_hmac_sha1(lc->secret.data,lc->secret.len,to_hash,strlen((char *)to_hash),md,20);
+    /*
+     * A esta altura tenemos el resumen
+     */
+
+    if (strncmp((const char*)sha1_hex((const u_char *)md,md_hex_str),(const char *)&(hash.data)[1],20)) {
+	return NGX_HTTP_UNAUTHORIZED;
+    }
+
+    free(to_hash);
 
     path.len = last - path.data;
 
@@ -302,6 +345,16 @@ static char *ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
+/* unsigned char *HMAC(const EVP_MD *evp_md, const void *key,
+                       int key_len, const unsigned char *d, int n,
+                       unsigned char *md, unsigned int *md_len);
+*/
+static u_char *get_hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len)
+{
+    unsigned int mlen = (unsigned int)md_len;
+    return HMAC(EVP_sha1(),key,key_len,d,n,md,(unsigned int *)&mlen);
+}
+
 
 static time_t gettime(ngx_str_t nstr)
 {
@@ -336,3 +389,14 @@ static time_t gettime(ngx_str_t nstr)
 
     return mktime(&t);
 }
+
+
+
+static u_char *sha1_hex(const u_char *md, u_char *hex)
+{
+    int i;
+    for(i = 0; i < 20; i++)
+         sprintf((char *)&hex[i*2], "%02x", (unsigned int)md[i]);
+    return hex;
+}
+
