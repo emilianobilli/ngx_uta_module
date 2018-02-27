@@ -196,12 +196,14 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     to_hash  = (u_char*) calloc(alloc_sz,1);
 
     if (to_hash == NULL) {
+	free(to_hash);
 	return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
     strncpy((char *)&to_hash[0]           ,(const char *)r->uri.data ,r->uri.len  + 1 );
     strncpy((char *)&to_hash[r->uri.len+1],(const char *)r->args.data,r->args.len - (4+2+hash.len));
 
     get_hmac_sha1(lc->secret.data,lc->secret.len,to_hash,strlen((char *)to_hash),md,20);
+    free(to_hash);
     /*
      * A esta altura tenemos el resumen
      */
