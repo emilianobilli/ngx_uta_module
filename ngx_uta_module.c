@@ -15,8 +15,8 @@ static time_t    gettime(ngx_str_t nstr);
 static void *    ngx_http_uta_create_loc_conf(ngx_conf_t *cf);
 static char *    ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r);
-static u_char *get_hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len);
-static u_char *sha1_hex(const u_char *md, u_char *hex);
+static u_char *  hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len);
+static u_char *  hex(const u_char *md, u_char *hex);
 
 
 ngx_http_module_t ngx_http_uta_module_ctx = {
@@ -202,17 +202,15 @@ static ngx_int_t ngx_http_uta_handler(ngx_http_request_t *r)
     strncpy((char *)&to_hash[0]           ,(const char *)r->uri.data ,r->uri.len  + 1 );
     strncpy((char *)&to_hash[r->uri.len+1],(const char *)r->args.data,r->args.len - (4+2+hash.len));
 
-    get_hmac_sha1(lc->secret.data,lc->secret.len,to_hash,strlen((char *)to_hash),md,20);
+    hmac_sha1(lc->secret.data,lc->secret.len,to_hash,strlen((char *)to_hash),md,20);
     free(to_hash);
     /*
      * A esta altura tenemos el resumen
      */
 
-    if (strncmp((const char*)sha1_hex((const u_char *)md,md_hex_str),(const char *)&(hash.data)[1],20)) {
+    if (strncmp((const char*)hex((const u_char *)md,md_hex_str),(const char *)&(hash.data)[1],20)) {
 	return NGX_HTTP_UNAUTHORIZED;
     }
-
-    free(to_hash);
 
     path.len = last - path.data;
 
@@ -351,7 +349,7 @@ static char *ngx_http_uta(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                        int key_len, const unsigned char *d, int n,
                        unsigned char *md, unsigned int *md_len);
 */
-static u_char *get_hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len)
+static u_char *hmac_sha1(const u_char *key, int key_len, const u_char *d, int n, u_char *md, size_t md_len)
 {
     unsigned int mlen = (unsigned int)md_len;
     return HMAC(EVP_sha1(),key,key_len,d,n,md,(unsigned int *)&mlen);
@@ -394,7 +392,7 @@ static time_t gettime(ngx_str_t nstr)
 
 
 
-static u_char *sha1_hex(const u_char *md, u_char *hex)
+static u_char *hex(const u_char *md, u_char *hex)
 {
     int i;
     for(i = 0; i < 20; i++)
