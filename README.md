@@ -3,6 +3,7 @@ Url Token Authorization for Nginx
 
 To install, compile nginx with this ./configure option:
 ```
+# sudo apt-get install libssl-dev
 ./configure --add-module=/path/to/uta/module
 ```
 
