@@ -4,7 +4,7 @@ Url Token Authorization for Nginx
 To install, compile nginx with this ./configure option:
 ```
 # sudo apt-get install libssl-dev
-./configure --add-module=/path/to/uta/module
+./configure --add-module=/path/to/uta/module --with-http_ssl_module
 ```
 
 If is defined to use URL Token Authentication, the cache engine processes the query string and creates up to four additional request headers. Those headers contain the authentication token, or hash, the not-valid-before and/or not-valid-after times, and the balance of the URL, less the authentication token and tokens to be ignored in the comparison.
